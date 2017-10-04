@@ -25,14 +25,14 @@ class Cfg(dict):
 
 cfg = Cfg({
     "name" : "resnet_test",
-    "key_name": "MaxLamKeyPair",          # Necessary to ssh into created instances
+    "key_name": "HongyiWKeyPair",          # Necessary to ssh into created instances
 
     # Cluster topology
     "n_masters" : 1,                      # Should always be 1
-    "n_workers" : 7,
+    "n_workers" : 1,
     "n_ps" : 1,
     "n_evaluators" : 1,                   # Continually validates the model on the validation data
-    "num_replicas_to_aggregate" : "8",
+    "num_replicas_to_aggregate" : "2",
 
     "method" : "spot",
 
@@ -49,11 +49,11 @@ cfg = Cfg({
     "image_id": "ami-b601b1d6",
 
     # Launch specifications
-    "spot_price" : ".15",                 # Has to be a string
+    "spot_price" : ".2",                 # Has to be a string
 
     # SSH configuration
     "ssh_username" : "ubuntu",            # For sshing. E.G: ssh ssh_username@hostname
-    "path_to_keyfile" : "/Users/maxlam/Desktop/School/Fall2016/Research/DistributedSGD/DistributedSGD.pem",
+    "path_to_keyfile" : "/home/hwang/My_Code/AWS/HongyiWKeyPair.pem",
 
     # NFS configuration
     # To set up these values, go to Services > ElasticFileSystem > Create new filesystem, and follow the directions.
@@ -73,19 +73,23 @@ cfg = Cfg({
     # Master pre commands are run only by the master
     "master_pre_commands" :
     [
-        "cd DistributedMNIST",
+        #"cd DistributedMNIST",
+        "rm -rf DistributedMNIST",
+        "https://github.com/hwang595/DistributedMNIST.git",
         "git fetch && git reset --hard origin/resnet_cifar100",
     ],
 
     # Pre commands are run on every machine before the actual training.
     "pre_commands" :
     [
-        "cd DistributedMNIST",
+        #"cd DistributedMNIST",
+        "rm -rf DistributedMNIST",
+        "https://github.com/hwang595/DistributedMNIST.git",
         "git fetch && git reset --hard origin/resnet_cifar100",
     ],
 
     # Model configuration
-    "batch_size" : "128",
+    "batch_size" : "1024",
     "initial_learning_rate" : ".08",
     "learning_rate_decay_factor" : "1",
     "num_epochs_per_decay" : "350.0",
