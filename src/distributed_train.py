@@ -186,7 +186,7 @@ def train(target, cluster_spec):
   # Ops are assigned to worker by default.
   with tf.device(
       tf.train.replica_device_setter(
-        worker_device='/job:worker/task:%d' % FLAGS.task_id,
+        worker_device='/job:worker/task:%d/gpu:0' % FLAGS.task_id,
         cluster=cluster_spec)):
 
     global_step = tf.Variable(0, name="global_step", trainable=False)
