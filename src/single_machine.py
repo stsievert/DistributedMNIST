@@ -96,7 +96,7 @@ EVAL_BATCHSIZE=2000
 
 def train():
   """Train on dataset for a number of steps."""
-  with tf.Graph().as_default(), tf.device('/cpu:0'):
+  with tf.Graph().as_default(), tf.device('/gpu:0'):
     # Create a variable to count the number of train() calls. This equals the
     # number of batches processed * FLAGS.num_gpus.
     global_step = tf.Variable(0, name="global_step", trainable=False)
