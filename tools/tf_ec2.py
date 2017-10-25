@@ -801,18 +801,20 @@ cfg = Cfg({
     # TODO
     "master_pre_commands":
     [
-        "git clone https://github.com/stsievert/models.git",
-        "cd models/research/inception/inception",
-        "git checkout grad-lossy-compression"
+        "git clone https://github.com/stsievert/DistributedMNIST",
+        "cd DistributedMNIST",
+        "git checkout grad-lossy-compression",
+        "cd src"
     ],
 
     # Pre commands are run on every machine before the actual training.
     # TODO
     "pre_commands":
     [
-        "git clone https://github.com/stsievert/models.git",
-        "cd models/research/inception/inception",
-        "git checkout grad-lossy-compression"
+        "git clone https://github.com/stsievert/DistributedMNIST",
+        "cd DistributedMNIST",
+        "git checkout grad-lossy-compression",
+        "cd src"
     ],
 
     # Model configuration
