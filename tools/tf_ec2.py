@@ -754,7 +754,7 @@ cfg = Cfg({
     "n_ps": 1,
     # Continually validates the model on the validation data
     "n_evaluators": 1,
-    "num_replicas_to_aggregate": "9",
+    "num_replicas_to_aggregate": "3",
 
     "method": "reserved",
 

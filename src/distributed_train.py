@@ -159,8 +159,9 @@ def train(target, dataset, cluster_spec):
     opt = tf.train.AdamOptimizer(lr)
 
     # Use V2 optimizer
-    if FLAGS.interval_method or FLAGS.worker_times_cdf_method:
-      opt = TimeoutReplicasOptimizer(
+    # TODO: change this
+    if True:
+      opt = LowCommSync(
         opt,
         global_step,
         total_num_replicas=num_workers)
