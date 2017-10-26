@@ -251,7 +251,7 @@ def tf_ec2_run(argv, configuration):
     # Returns a tuple of (instance, is_instance_idle). We return a tuple for multithreading ease.
     def is_instance_idle(q, instance):
         python_processes = run_ssh_commands(instance, ["ps aux | grep python"])
-        q.put((instance, not "ps_hosts" in python_processes and not "ps_workers" in python_processes))
+        q.put((instance, not b"ps_hosts" in python_processes and not b"ps_workers" in python_processes))
 
     # Idle instances are running instances that are not running the inception model.
     # We check whether an instance is running the inception model by ssh'ing into a running machine,
@@ -750,7 +750,7 @@ cfg = Cfg({
 
     # Cluster topology
     "n_masters": 1,                      # Should always be 1
-    "n_workers": 8,
+    "n_workers": 2,
     "n_ps": 1,
     # Continually validates the model on the validation data
     "n_evaluators": 1,
@@ -764,13 +764,16 @@ cfg = Cfg({
     "availability_zone": "us-west-2b",
 
     # Machine type - instance type configuration.
+    #  "master_type": "p2.xlarge",
+    #  "worker_type": "p2.xlarge",
+    #  "ps_type": "p2.xlarge",
+    #  "evaluator_type": "p2.xlarge",
     "master_type": "g2.2xlarge",
     "worker_type": "g2.2xlarge",
     "ps_type": "g2.2xlarge",
     "evaluator_type": "g2.2xlarge",
-    # AMI with Jupyter + anaconda + CUDA from Amazon's Deep learning
-    "image_id": "ami-ceb545b6",
-
+    # AMI with tensorflow GPU support
+    "image_id": "ami-fbb8399b",
     # DONE: set up own AMI ID
 
     # Launch specifications
@@ -778,14 +781,14 @@ cfg = Cfg({
 
     # SSH configuration
     # DONE: change both these lines
-    "ssh_username": "ec2-user",            # For sshing. E.G: ssh ssh_username@hostname
+    "ssh_username": "ubuntu",
     "path_to_keyfile": "/Users/scott/Work/Developer/AWS/scott-key-dim.pem",
 
     # NFS configuration
     # To set up these values, go to Services > ElasticFileSystem > Create new filesystem, and follow the directions.
     # DONE: set up your own NFS file directory
     "nfs_ip_address": "172.31.27.72",  # us-west-2b
-    "nfs_mount_point": "/home/ec2-user/inception_shared",       # NFS base dir
+    "nfs_mount_point": "/home/ubuntu/cluster-shared",
     # Master writes checkpoints to this directory. Outfiles are written to this directory.
     "base_out_dir": "%(nfs_mount_point)s/%(name)s",
 
@@ -801,20 +804,22 @@ cfg = Cfg({
     # TODO
     "master_pre_commands":
     [
-        "git clone https://github.com/stsievert/DistributedMNIST",
-        "cd DistributedMNIST",
-        "git checkout grad-lossy-compression",
-        "cd src"
+        "cd /home/ubuntu;",
+        "rm -rf DistributedMNIST",
+        "git clone https://github.com/stsievert/DistributedMNIST;",
+        "cd DistributedMNIST;",
+        "git checkout grad-lossy-compression;",
     ],
 
     # Pre commands are run on every machine before the actual training.
     # TODO
     "pre_commands":
     [
-        "git clone https://github.com/stsievert/DistributedMNIST",
-        "cd DistributedMNIST",
-        "git checkout grad-lossy-compression",
-        "cd src"
+        "cd /home/ubuntu;",
+        "rm -rf DistributedMNIST",
+        "git clone https://github.com/stsievert/DistributedMNIST;",
+        "cd DistributedMNIST;",
+        "git checkout grad-lossy-compression;",
     ],
 
     # Model configuration
@@ -834,6 +839,7 @@ cfg = Cfg({
     # %(...)s - Inserts self referential string value.
     "train_commands":
     [
+        "cd /home/ubuntu/DistributedMNIST;",
         "python src/mnist_distributed_train.py "
         "--batch_size=%(batch_size)s "
         "--initial_learning_rate=%(initial_learning_rate)s "
