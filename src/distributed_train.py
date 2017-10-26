@@ -164,7 +164,7 @@ def train(target, dataset, cluster_spec):
     if True:
       opt = LowCommSync(
         opt,
-        global_step,
+        replicas_to_aggregate=num_replicas_to_aggregate,
         total_num_replicas=num_workers)
     else:
       opt = tf.train.SyncReplicasOptimizer(
