@@ -25,6 +25,7 @@ from tensorflow.python.ops import logging_ops
 from tensorflow.python.client import timeline
 from tensorflow.python.ops import data_flow_ops
 import mnist
+from sync_replicas import LowCommSync
 
 from timeout_manager import launch_manager
 

@@ -2,7 +2,7 @@ import tensorflow as tf
 
 
 def encode(grads_and_vars):
-    print([(g.get_shape(), v.get_shape()) for g, v in grads_and_vars])
+    tf.log([(g.get_shape(), v.get_shape()) for g, v in grads_and_vars])
     return x
 
 

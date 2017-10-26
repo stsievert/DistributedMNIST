@@ -809,6 +809,7 @@ cfg = Cfg({
         "git clone https://github.com/stsievert/DistributedMNIST;",
         "cd DistributedMNIST;",
         "git checkout grad-lossy-compression;",
+        "git pull"
     ],
 
     # Pre commands are run on every machine before the actual training.
@@ -820,6 +821,7 @@ cfg = Cfg({
         "git clone https://github.com/stsievert/DistributedMNIST;",
         "cd DistributedMNIST;",
         "git checkout grad-lossy-compression;",
+        "git pull"
     ],
 
     # Model configuration
