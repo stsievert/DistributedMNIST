@@ -14,6 +14,9 @@ import json
 import os
 from scp import SCPClient
 from pprint import pprint
+import subprocess
+import pathlib
+from joblib import Parallel, delayed
 
 
 class Cfg(dict):
@@ -85,6 +88,34 @@ def tf_ec2_run(argv, configuration):
                 if state != "cancelled":
                     done = False
             sleep_a_bit()
+
+    def _get_instances():
+        live_instances = ec2.instances.filter(Filters=[{'Name': 'instance-state-name', 'Values': [
+                                              'running']}, {'Name': 'key-name', 'Values': [configuration["key_name"]]}])
+        return live_instances
+
+
+    def _scp(dir, instance):
+        pprint(f'SCP {dir} to {instance}')
+        client = connect_client(instance)
+        scp = SCPClient(client.get_transport())
+        scp.put(dir, remote_path='DistributedMNIST/', recursive=True)
+        scp.close()
+        client.close()
+
+
+    def debug(argv):
+        kill_all_python(argv)
+        cmd = 'scp -r ../* ubuntu@{dns}:~/DistributedMNIST'
+        instances = _get_instances()
+        import os
+        this_dir = os.path.dirname(os.path.abspath(__file__))
+        dir = this_dir + '/../src'
+        #  Parallel(n_jobs=8)(delayed(_scp)(dir, instance)
+                           #  for instance in instances)
+        for instance in instances:
+            _scp(dir, instance)
+        run_tf(argv, initialize=False)
 
     # Terminate all instances in the configuration
     # Note: all_instances = ec2.instances.all() to get all intances
@@ -325,7 +356,7 @@ def tf_ec2_run(argv, configuration):
         terminate_all_instances()
 
     # Main method to run tf commands on a set of idle instances.
-    def run_tf(argv, batch_size=128, port=1234):
+    def run_tf(argv, batch_size=128, port=1234, initialize=True):
 
         assert(configuration["n_masters"] == 1)
 
@@ -384,6 +415,9 @@ def tf_ec2_run(argv, configuration):
             "instance": machine_assignments["master"][0], "commands": list(configuration["master_pre_commands"])}
         setup_machine_assignments["master"] = {
             "instance": machine_assignments["master"][0], "commands": list(configuration["setup_commands"])}
+        if not initialize:
+            setup_machine_assignments['master']['commands'] = []
+            command_machine_assignments['master']['commands'] = []
         for command_string in configuration["train_commands"]:
             command_machine_assignments["master"]["commands"].append(command_string.replace("PS_HOSTS", ps_host_string).replace(
                 "TASK_ID", "0").replace("JOB_NAME", "worker").replace("WORKER_HOSTS", worker_host_string).replace("ROLE_ID", "master"))
@@ -393,6 +427,8 @@ def tf_ec2_run(argv, configuration):
             name = "worker_%d" % worker_id
             command_machine_assignments[name] = {"instance": instance,
                                                  "commands": list(configuration["pre_commands"])}
+            if not initialize:
+                command_machine_assignments[name]['commands'] = []
             for command_string in configuration["train_commands"]:
                 command_machine_assignments[name]["commands"].append(command_string.replace("PS_HOSTS", ps_host_string).replace("TASK_ID", "%d" % (
                     worker_id + 1)).replace("JOB_NAME", "worker").replace("WORKER_HOSTS", worker_host_string).replace("ROLE_ID", name))
@@ -402,6 +438,8 @@ def tf_ec2_run(argv, configuration):
             name = "ps_%d" % ps_id
             command_machine_assignments[name] = {"instance": instance,
                                                  "commands": list(configuration["pre_commands"])}
+            if not initialize:
+                command_machine_assignments[name]['commands'] = []
             for command_string in configuration["train_commands"]:
                 command_machine_assignments[name]["commands"].append(command_string.replace("PS_HOSTS", ps_host_string).replace(
                     "TASK_ID", "%d" % ps_id).replace("JOB_NAME", "ps").replace("WORKER_HOSTS", worker_host_string).replace("ROLE_ID", name))
@@ -411,6 +449,8 @@ def tf_ec2_run(argv, configuration):
         assert(len(machine_assignments["evaluator"]) == 1)
         command_machine_assignments["evaluator"] = {"instance": machine_assignments["evaluator"][0],
                                                     "commands": list(configuration["pre_commands"]) + list(configuration["evaluate_commands"])}
+        if not initialize:
+            command_machine_assignments['evaluator']['commands'] = list(configuration['evaluate_commands'])
 
         # Run the commands via ssh in parallel
         threads = []
@@ -720,6 +760,7 @@ def tf_ec2_run(argv, configuration):
         "run_command": run_command,
         "download_outdir": download_outdir,
         "download_file": download_file,
+        "debug": debug
     }
     help_map = {
         "launch": "Launch instances",
@@ -732,7 +773,8 @@ def tf_ec2_run(argv, configuration):
         "kill_python": "Kills python running inception on instances indicated by instance id string separated by ',' (no spaces).",
         "run_command": "Runs given command on instances selcted by instance id string, separated by ','.",
         "download_outdir": "Downloads base_out_dir as specified in the configuration. Used for pulling checkpoint files and saved models.",
-        "download_file": "Downloads base_out_dir/filepath as specified in the configuration."
+        "download_file": "Downloads base_out_dir/filepath as specified in the configuration.",
+        "debug": "Kill python on all machines, then SCP the parent dir"
     }
 
     if len(argv) < 2:
@@ -772,6 +814,10 @@ cfg = Cfg({
     "worker_type": "g2.2xlarge",
     "ps_type": "g2.2xlarge",
     "evaluator_type": "g2.2xlarge",
+    #  "master_type": "m3.xlarge",
+    #  "worker_type": "m3.xlarge",
+    #  "ps_type": "m3.xlarge",
+    #  "evaluator_type": "m3.xlarge",
     # AMI with tensorflow GPU support
     "image_id": "ami-fbb8399b",
     # DONE: set up own AMI ID
@@ -864,7 +910,7 @@ cfg = Cfg({
     "evaluate_commands":
     [
         # Sleep a bit
-        "sleep 30",
+        "sleep 5", # TODO: change to sleep 30 when not in debug mode!
 
         # Evaluation command
         "python src/mnist_eval.py "
