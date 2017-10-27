@@ -1,9 +1,13 @@
 import tensorflow as tf
+from tensorflow.python.framework import ops
 
 
 def encode(grads_and_vars):
-    tf.log([(g.get_shape(), v.get_shape()) for g, v in grads_and_vars])
-    return x
+    to_log = type(grads_and_vars)
+    for grad, var in grads_and_vars:
+        string = "{} {}".format(grad.get_shape(), var.get_shape())
+        tf.logging.info(string)
+    return grads_and_vars
 
 
 def decode(x):
@@ -11,11 +15,12 @@ def decode(x):
 
 
 class LowCommSync(tf.train.SyncReplicasOptimizer):
-    def apply_gradients(self, *args, **kwargs):
-        grads_and_vars = super(LowCommSync, self).apply_gradients(*args, **kwargs)
+    def compute_gradients(self, *args, **kwargs):
+        grads_and_vars = super(LowCommSync, self).compute_gradients(*args, **kwargs)
         coding = encode(grads_and_vars)
         return coding
 
-    def compute_gradients(self, coding):
+    def apply_gradients(self, coding, *args, **kwargs):
         grads_and_vars = decode(coding)
-        return super(LowCommSync, self).compute_gradients(grads_and_vars)
+        return super(LowCommSync, self).apply_gradients(grads_and_vars,
+                                                        *args, **kwargs)
