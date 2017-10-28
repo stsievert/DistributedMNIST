@@ -843,6 +843,7 @@ cfg = Cfg({
     [
         "sudo rm -rf %(base_out_dir)s",
         "mkdir %(base_out_dir)s",
+        "sudo pip install -r src/requirements.txt",
     ],
 
     # Command specification
@@ -888,7 +889,8 @@ cfg = Cfg({
     "train_commands":
     [
         "cd /home/ubuntu/DistributedMNIST;",
-        "python src/mnist_distributed_train.py "
+        "sudo pip install -r src/requirements.txt",
+        "python src/resnet_distributed_train.py "
         "--batch_size=%(batch_size)s "
         "--initial_learning_rate=%(initial_learning_rate)s "
         "--learning_rate_decay_factor=%(learning_rate_decay_factor)s "
@@ -910,10 +912,11 @@ cfg = Cfg({
     "evaluate_commands":
     [
         # Sleep a bit
+        "sudo pip install -r src/requirements.txt",
         "sleep 5", # TODO: change to sleep 30 when not in debug mode!
 
         # Evaluation command
-        "python src/mnist_eval.py "
+        "python src/resnet_eval.py "
         "--eval_dir=%(base_out_dir)s/eval_dir "
         "--checkpoint_dir=%(base_out_dir)s/train_dir "
         "> %(base_out_dir)s/out_evaluator 2>&1 &",

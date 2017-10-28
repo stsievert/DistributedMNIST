@@ -38,8 +38,7 @@ def main(unused_args):
         n_workers = len(worker_hosts)
         worker_id = int(FLAGS.task_id)
         maybe_download_and_extract()
-        all_data, all_labels = prepare_train_data(
-            padding_size=FLAGS.padding_size)
+        all_data, all_labels = prepare_train_data()
         # Only the chief checks for or creates train_dir.
         if FLAGS.task_id == 0:
             if not tf.gfile.Exists(FLAGS.train_dir):
