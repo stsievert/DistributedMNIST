@@ -9,9 +9,11 @@ import cPickle
 import os
 import cv2
 
-data_dir = 'cifar10_data'
-full_data_dir = 'cifar10_data/cifar-10-batches-py/data_batch_'
-vali_dir = 'cifar10_data/cifar-10-batches-py/test_batch'
+prefix = '/home/ubuntu/'
+
+data_dir = prefix + 'cifar10_data'
+full_data_dir = prefix + 'cifar10_data/cifar-10-batches-py/data_batch_'
+vali_dir = prefix + 'cifar10_data/cifar-10-batches-py/test_batch'
 DATA_URL = 'http://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz'
 
 

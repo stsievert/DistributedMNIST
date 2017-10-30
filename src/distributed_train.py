@@ -185,6 +185,7 @@ def train(target, all_data, all_labels, cluster_spec):
     '''
     This is the main function for training
     '''
+    maybe_download_and_extract()  # from cifar10, get the data
     image_placeholder = tf.placeholder(dtype=tf.float32,
                                             shape=[FLAGS.batch_size, IMG_HEIGHT,
                                                     IMG_WIDTH, IMG_DEPTH])
@@ -238,8 +239,12 @@ def train(target, all_data, all_labels, cluster_spec):
 
         opt = tf.train.AdamOptimizer(lr)
         use_svd_compress = FLAGS.svd_rank > 0
-        kwargs = {'replicas_to_aggregate':  num_replicas_to_aggregate,
+        kwargs = {'replicas_to_aggregate': num_replicas_to_aggregate,
                   'total_num_replicas': num_workers}
+        print('#'*40)
+        print('svd_use_compress =', use_svd_compress)
+        print('svd_rank =', FLAGS.svd_rank)
+        print('#'*40)
         if use_svd_compress:
             opt = LowCommSync(opt, svd_rank=FLAGS.svd_rank, **kwargs)
         else:

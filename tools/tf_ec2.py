@@ -726,6 +726,10 @@ def tf_ec2_run(argv, configuration):
         wait_until_running_instances_initialized()
         setup_nfs()
 
+    def launch_and_run(argv):
+        launch(argv)
+        debug(argv)
+
     def clean_launch_and_run(argv):
         # 1. Kills all instances in region
         # 2. Kills all requests in region
@@ -753,6 +757,7 @@ def tf_ec2_run(argv, configuration):
         "clean_launch_and_run": clean_launch_and_run,
         "shutdown": shut_everything_down,
         "run_tf": run_tf,
+        "launch_and_run": launch_and_run,
         "kill_all_python": kill_all_python,
         "list_idle_instances": summarize_idle_instances,
         "list_running_instances": summarize_running_instances,
@@ -786,16 +791,22 @@ def tf_ec2_run(argv, configuration):
 
 
 cfg = Cfg({
-    "svd_rank": "1",
-    "name": "svd-rank-%(svd_rank)s",      # Unique name for this specific configuration
+    "svd_rank": "3",
+    "name": "svd-rank-%(svd_rank)s",  # Unique name for this specific configuration
+    "key_name": "scott-key-dim",  # Necessary to ssh into created instances
+
+    # SSH configuration
+    # DONE: change both these lines
+    "ssh_username": "ubuntu",
+    "path_to_keyfile": "/Users/scott/Work/Developer/AWS/%(key_name)s.pem",
 
     # Cluster topology
-    "n_masters": 1,                      # Should always be 1
-    "n_workers": 4,
+    "n_masters": 1,  # == 1
+    "n_workers": 7,  # the master counts as a worker too
     "n_ps": 1,
     # Continually validates the model on the validation data
     "n_evaluators": 1,
-    "num_replicas_to_aggregate": "3",
+    "num_replicas_to_aggregate": "%(n_workers)s",
 
     "method": "reserved",
 
@@ -803,7 +814,6 @@ cfg = Cfg({
     # DONE: change this?
     "region": "us-west-2",
     "availability_zone": "us-west-2b",
-    "key_name": "scott-key-dim",          # Necessary to ssh into created instances
 
     # Machine type - instance type configuration.
     #  "master_type": "p2.xlarge",
@@ -825,10 +835,6 @@ cfg = Cfg({
     # Launch specifications
     "spot_price": "0.22",                 # Has to be a string
 
-    # SSH configuration
-    # DONE: change both these lines
-    "ssh_username": "ubuntu",
-    "path_to_keyfile": "/Users/scott/Work/Developer/AWS/scott-key-dim.pem",
 
     # NFS configuration
     # To set up these values, go to Services > ElasticFileSystem > Create new filesystem, and follow the directions.
@@ -873,7 +879,7 @@ cfg = Cfg({
 
     # Model configuration
     # TODO: make these command line args
-    "batch_size": "1024",
+    "batch_size": "128",
     "max_steps": "1500",
     "initial_learning_rate": "0.001",
     "learning_rate_decay_factor": ".95",
@@ -890,6 +896,7 @@ cfg = Cfg({
     [
         "cd /home/ubuntu/DistributedMNIST;",
         "sudo pip install -r src/requirements.txt",
+        "mkdir %(base_out_dir)s",
         "python src/resnet_distributed_train.py "
         "--batch_size=%(batch_size)s "
         "--initial_learning_rate=%(initial_learning_rate)s "
