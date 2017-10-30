@@ -69,6 +69,7 @@ tf.app.flags.DEFINE_string('subset', 'train', 'Either "train" or "validation".')
 tf.app.flags.DEFINE_boolean('log_device_placement', False,
                             'Whether to log device placement.')
 tf.app.flags.DEFINE_integer('num_of_instances_cifar10', 50000, 'Number of data instances in Cifar10 dataset')
+tf.app.flags.DEFINE_integer('svd_rank', 3, 'Rank of SVD approximation')
 
 # Task ID is used to select the chief and also to access the local_step for
 # each replica to check staleness of the gradients in sync_replicas_optimizer.
@@ -236,9 +237,14 @@ def train(target, all_data, all_labels, cluster_spec):
 #        train_top1_error = top_k_error(predictions, label_placeholder, 1)
 
         opt = tf.train.AdamOptimizer(lr)
-        opt = LowCommSync(opt,
-                replicas_to_aggregate=num_replicas_to_aggregate,
-                total_num_replicas=num_workers)
+        use_svd_compress = FLAGS.svd_rank > 0
+        kwargs = {'replicas_to_aggregate':  num_replicas_to_aggregate,
+                  'total_num_replicas': num_workers}
+        if use_svd_compress:
+            opt = LowCommSync(opt, svd_rank=FLAGS.svd_rank, **kwargs)
+        else:
+            opt = tf.train.SyncReplicasOptimizer(opt, **kwargs)
+
         #  if FLAGS.interval_method or FLAGS.worker_times_cdf_method:
             #  opt = TimeoutReplicasOptimizer(
                 #  opt,
@@ -314,11 +320,14 @@ def train(target, all_data, all_labels, cluster_spec):
 
         if FLAGS.task_id == 0 and FLAGS.interval_method:
             opt.start_interval_updates(sess, timeout_client)
+
+        summary_data = []
         while not sv.should_stop():
         #    try:
             sys.stdout.flush()
             tf.logging.info("A new iteration...")
             cur_iteration += 1
+            tf.logging.info("Current optimization step: {}".format(cur_iteration))
 
             if FLAGS.worker_times_cdf_method:
                 sess.run([opt._wait_op])
@@ -340,18 +349,26 @@ def train(target, all_data, all_labels, cluster_spec):
             loss_value, step = sess.run(
                 #[train_op, global_step], feed_dict={feed_dict, x}, run_metadata=run_metadata, options=run_options)
                 [train_op, global_step], feed_dict=feed_dict, run_metadata=run_metadata, options=run_options)
-            tf.logging.info("DONE RUNNING SESSION...")
-
-            if FLAGS.worker_times_cdf_method:
-                timeout_client.broadcast_worker_finished_computing_gradients(cur_iteration)
-            assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
             finish_time = time.time()
+            #  tf.summary.scalar('loss', loss_value)
+            #  tf.summary.scalar('step', step)
+            #  tf.summary.scalar('batch_size', batch_size)
+
+            assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
+            datum = {'loss': float(loss_value), 'step': int(step),
+                     'cur_iteration': cur_iteration,
+                     'batch_size': FLAGS.batch_size,
+                     'epoch_train_time': finish_time - start_time,
+                     'svd_rank': FLAGS.svd_rank}
+            datum['examples_per_sec'] = datum['batch_size'] / datum['epoch_train_time']
+            summary_data += [datum]
+            tf.logging.info("DONE RUNNING SESSION...")
             if FLAGS.timeline_logging:
                 tl = timeline.Timeline(run_metadata.step_stats)
                 ctf = tl.generate_chrome_trace_format()
                 with open('%s/worker=%d_timeline_iter=%d.json' % (FLAGS.train_dir, FLAGS.task_id, step), 'w'):
                     f.write(ctf)
-            if step > FLAGS.max_steps:
+            if cur_iteration > FLAGS.max_steps:
                 break
 
             duration = time.time() - start_time
@@ -361,18 +378,19 @@ def train(target, all_data, all_labels, cluster_spec):
             tf.logging.info(format_str %
                         (FLAGS.task_id, datetime.now(), step, loss_value,
                             examples_per_sec, duration))
+            if is_chief and step % 1 == 0:
+                tf.logging.info(summary_data[-1])
+                df = pd.DataFrame(summary_data)
+                ids = [str(summary_data[0][key])
+                       for key in ['batch_size', 'svd_rank']]
+                filename = "-".join(ids)
+                df.to_csv('/home/ubuntu/cluster-shared/' + filename + '.csv')
             if is_chief and next_summary_time < time.time() and FLAGS.should_summarize:
                 tf.logging.info('Running Summary operation on the chief.')
                 summary_str = sess.run(summary_op)
                 sv.summary_computed(sess, summary_str)
                 tf.logging.info('Finished running Summary operation.')
                 next_summary_time += FLAGS.save_summaries_secs
-        #    except tf.errors.DeadlineExceededError:
-        #        tf.logging.info("Killed at time %f" % time.time())
-                #sess.reset_kill()
-        #    except:
-        #        tf.logging.info("Unexpected error: %s" % str(sys.exc_info()[0]))
-                #sess.reset_kill()
         if is_chief:
             tf.logging.info('Elapsed Time: %f' % (time.time()-begin_time))
         sv.stop()
@@ -381,6 +399,3 @@ def train(target, all_data, all_labels, cluster_spec):
             saver.save(sess,
                         os.path.join(FLAGS.train_dir, 'model.ckpt'),
                         global_step=global_step)
-
-
-

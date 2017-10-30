@@ -786,13 +786,12 @@ def tf_ec2_run(argv, configuration):
 
 
 cfg = Cfg({
-    "name": "tf-cluster",      # Unique name for this specific configuration
-    # TODO: change this to your key
-    "key_name": "scott-key-dim",          # Necessary to ssh into created instances
+    "svd_rank": "1",
+    "name": "svd-rank-%(svd_rank)s",      # Unique name for this specific configuration
 
     # Cluster topology
     "n_masters": 1,                      # Should always be 1
-    "n_workers": 2,
+    "n_workers": 4,
     "n_ps": 1,
     # Continually validates the model on the validation data
     "n_evaluators": 1,
@@ -804,6 +803,7 @@ cfg = Cfg({
     # DONE: change this?
     "region": "us-west-2",
     "availability_zone": "us-west-2b",
+    "key_name": "scott-key-dim",          # Necessary to ssh into created instances
 
     # Machine type - instance type configuration.
     #  "master_type": "p2.xlarge",
@@ -897,6 +897,7 @@ cfg = Cfg({
         "--num_epochs_per_decay=%(num_epochs_per_decay)s "
         "--train_dir=%(base_out_dir)s/train_dir "
         "--max_steps=%(max_steps)s "
+        "--svd_rank=%(svd_rank)s "
         "--worker_hosts='WORKER_HOSTS' "
         "--ps_hosts='PS_HOSTS' "
         "--task_id=TASK_ID "

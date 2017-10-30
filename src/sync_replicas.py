@@ -13,6 +13,15 @@ def _4d_to_2d(x):
 
     return tf.reshape(x, shape)
 
+
+def _sample_svd(s):
+    s = s.eval()
+    probs = s / s[0]
+    idx = np.arange(len(s))
+    i = np.random.choice(s, p=probs)
+    return list(i)
+
+
 def encode(grads_and_vars, r=2):
     for i, (grad, var) in enumerate(grads_and_vars):
         shape = grad.get_shape()
@@ -20,6 +29,7 @@ def encode(grads_and_vars, r=2):
             grad = _4d_to_2d(grad)
         if len(shape) == 2:
             s, u, v = tf.svd(grad)
+            #  i = _sample_svd(u, s, v)
             u = u[:, :r]
             s = s[:r]
             v = v[:, :r]
@@ -40,9 +50,13 @@ def decode(grads_and_vars):
 
 
 class LowCommSync(tf.train.SyncReplicasOptimizer):
+    def __init__(self, *args, **kwargs):
+        self.svd_rank = kwargs.pop('svd_rank', 3)
+        return super(LowCommSync, self).__init__(*args, **kwargs)
+
     def compute_gradients(self, *args, **kwargs):
         grads_and_vars = super(LowCommSync, self).compute_gradients(*args, **kwargs)
-        coding = encode(grads_and_vars)
+        coding = encode(grads_and_vars, r=self.svd_rank)
         return coding
 
     def apply_gradients(self, coding, *args, **kwargs):
