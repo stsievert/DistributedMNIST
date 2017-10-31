@@ -244,11 +244,13 @@ def train(target, all_data, all_labels, cluster_spec):
         print('#'*40)
         print('svd_use_compress =', use_svd_compress)
         print('svd_rank =', FLAGS.svd_rank)
-        print('#'*40)
         if use_svd_compress:
+            print('using LowCommSync')
             opt = LowCommSync(opt, svd_rank=FLAGS.svd_rank, **kwargs)
         else:
+            print('using SyncReplicasOptimizer')
             opt = tf.train.SyncReplicasOptimizer(opt, **kwargs)
+        print('#'*40)
 
         #  if FLAGS.interval_method or FLAGS.worker_times_cdf_method:
             #  opt = TimeoutReplicasOptimizer(
@@ -271,7 +273,7 @@ def train(target, all_data, all_labels, cluster_spec):
         # Compute gradients with respect to the loss.
         grads = opt.compute_gradients(total_loss)
         #compute weighted gradients here.
-        apply_gradients_op = opt.apply_gradients(grads, global_step=global_step)
+        apply_gradients_op, opt_data = opt.apply_gradients(grads, global_step=global_step)
         with tf.control_dependencies([apply_gradients_op]):
             train_op = tf.identity(total_loss, name='train_op')
 
@@ -337,7 +339,6 @@ def train(target, all_data, all_labels, cluster_spec):
             if FLAGS.worker_times_cdf_method:
                 sess.run([opt._wait_op])
                 timeout_client.broadcast_worker_dequeued_token(cur_iteration)
-            start_time = time.time()
             epoch_counter, local_data_batch_idx, feed_dict = fill_feed_dict(
                 all_data, all_labels, image_placeholder, label_placeholder, FLAGS.batch_size, local_data_batch_idx, epoch_counter)
 
@@ -345,12 +346,13 @@ def train(target, all_data, all_labels, cluster_spec):
             run_metadata = tf.RunMetadata()
 
             if FLAGS.timeline_logging:
-                run_options.trace_level=tf.RunOptions.FULL_TRACE
-                run_options.output_partition_graphs=True
+                run_options.trace_level = tf.RunOptions.FULL_TRACE
+                run_options.output_partition_graphs = True
 
             #feed_dict[weight_vec_placeholder] = ls_solution
             tf.logging.info("RUNNING SESSION... %f" % time.time())
             tf.logging.info("Data batch index: %s, Current epoch idex: %s" % (str(epoch_counter), str(local_data_batch_idx)))
+            start_time = time.time()
             loss_value, step = sess.run(
                 #[train_op, global_step], feed_dict={feed_dict, x}, run_metadata=run_metadata, options=run_options)
                 [train_op, global_step], feed_dict=feed_dict, run_metadata=run_metadata, options=run_options)
@@ -364,7 +366,9 @@ def train(target, all_data, all_labels, cluster_spec):
                      'cur_iteration': cur_iteration,
                      'batch_size': FLAGS.batch_size,
                      'epoch_train_time': finish_time - start_time,
-                     'svd_rank': FLAGS.svd_rank}
+                     'svd_rank': FLAGS.svd_rank,
+                     'num_blocks': FLAGS.num_residual_blocks}
+            datum['num_layers'] = datum['num_blocks']*6 + 2
             datum['examples_per_sec'] = datum['batch_size'] / datum['epoch_train_time']
             summary_data += [datum]
             tf.logging.info("DONE RUNNING SESSION...")
@@ -387,7 +391,7 @@ def train(target, all_data, all_labels, cluster_spec):
                 tf.logging.info(summary_data[-1])
                 df = pd.DataFrame(summary_data)
                 ids = [str(summary_data[0][key])
-                       for key in ['batch_size', 'svd_rank']]
+                       for key in ['batch_size', 'svd_rank', 'num_layers']]
                 filename = "-".join(ids)
                 df.to_csv('/home/ubuntu/cluster-shared/' + filename + '.csv')
             if is_chief and next_summary_time < time.time() and FLAGS.should_summarize:

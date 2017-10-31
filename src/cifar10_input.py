@@ -48,6 +48,8 @@ def maybe_download_and_extract():
         print()
         statinfo = os.stat(filepath)
         print('Successfully downloaded', filename, statinfo.st_size, 'bytes.')
+        print(filepath)
+        os.system('tar -zxvf ' + filepath)
         tarfile.open(filepath, 'r:gz').extractall(dest_directory)
 
 
@@ -190,3 +192,5 @@ def read_validation_data():
     return validation_array, validation_labels
 
 
+if __name__ == "__main__":
+    maybe_download_and_extract()

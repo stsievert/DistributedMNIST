@@ -11,3 +11,4 @@ My debug workflow is
 3. Make changes on local machine
 4. Run `python tf_ec2.py debug`
 5. Go back to step 2
+
