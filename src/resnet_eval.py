@@ -32,7 +32,7 @@ def main(unused_argv=None):
     tf.gfile.MakeDirs(FLAGS.eval_dir)
     maybe_download_and_extract()
     eval_data, eval_labels = read_validation_data()
-    nn_eval.evaluate(eval_data, eval_labels)
+    nn_eval.evaluate(eval_data, eval_labels, out_dir=FLAGS.out_dir)
 
 
 if __name__ == '__main__':

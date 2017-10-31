@@ -79,13 +79,13 @@ def do_eval(saver,
       else:
         print('No checkpoint file found')
         sys.stdout.flush()
-        return -1
+        return -1, None
 
       global_step = ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1]
 
       # Don't evaluate on the same checkpoint
       if prev_global_step == global_step:
-        return prev_global_step
+        return prev_global_step, None
 
       print('Succesfully loaded model from %s at step=%s.' %
             (ckpt.model_checkpoint_path, global_step))
@@ -108,7 +108,8 @@ def do_eval(saver,
       summary.value.add(tag="Validation Accuracy", simple_value=float(acc))
       summary.value.add(tag="Validation Loss", simple_value=float(loss))
       writer.add_summary(summary, global_step)
-    return global_step
+      datum = {'accuracy': acc, 'loss': loss, 'global_step': global_step}
+    return global_step, datum
 
   except Exception as e:
     print(e.__doc__)
@@ -133,8 +134,13 @@ def evaluate(dataset):
     summary_writer = tf.summary.FileWriter(FLAGS.eval_dir,
                                            graph_def=graph_def)
     step = -1
+    data = []
     while True:
-      step = do_eval(saver, summary_writer, validation_accuracy, validation_loss, images_placeholder, labels_placeholder, dataset, prev_global_step=step)
+      step, datum = do_eval(saver, summary_writer, validation_accuracy, validation_loss, images_placeholder, labels_placeholder, dataset, prev_global_step=step)
+      if datum is not None:
+          data += [datum]
+          df = pd.DataFrame(data)
+          df.to_csv(out_dir + 'eval.csv')
       if FLAGS.run_once:
         break
       time.sleep(FLAGS.eval_interval_secs)
