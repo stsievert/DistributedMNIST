@@ -791,12 +791,13 @@ def tf_ec2_run(argv, configuration):
 
 
 cfg = Cfg({
-    "svd_rank": "3",
+    "svd_rank": "0",
     "name": "svd-rank-%(svd_rank)s",  # Unique name for this specific configuration
     "key_name": "scott-key-dim",  # Necessary to ssh into created instances
-    "depth": 23,  # total layers = 6*depth + 2
-    "batch_size": "256",
+    "depth": 4,  # total layers = 6*depth + 2
+    "batch_size": "32",
     "max_steps": "4000",
+    "initial_learning_rate": "0.001",
 
     # SSH configuration
     # DONE: change both these lines
@@ -805,7 +806,7 @@ cfg = Cfg({
 
     # Cluster topology
     "n_masters": 1,  # == 1
-    "n_workers": 3,  # the master counts as a worker too
+    "n_workers": 1,  # the master counts as a worker too
     "n_ps": 1,
     # Continually validates the model on the validation data
     "n_evaluators": 1,
@@ -813,7 +814,6 @@ cfg = Cfg({
 
     # Model configuration
     # TODO: make these command line args
-    "initial_learning_rate": "0.001",
     "learning_rate_decay_factor": ".95",
     "num_epochs_per_decay": "1.0",
 

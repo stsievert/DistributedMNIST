@@ -240,17 +240,13 @@ def train(target, all_data, all_labels, cluster_spec):
         opt = tf.train.AdamOptimizer(lr)
         use_svd_compress = FLAGS.svd_rank > 0
         kwargs = {'replicas_to_aggregate': num_replicas_to_aggregate,
-                  'total_num_replicas': num_workers}
+                  'total_num_replicas': num_workers,
+                  'compress': use_svd_compress,
+                  'svd_rank': FLAGS.svd_rank}
         print('#'*40)
-        print('svd_use_compress =', use_svd_compress)
-        print('svd_rank =', FLAGS.svd_rank)
-        if use_svd_compress:
-            print('using LowCommSync')
-            opt = LowCommSync(opt, svd_rank=FLAGS.svd_rank, **kwargs)
-        else:
-            print('using SyncReplicasOptimizer')
-            opt = tf.train.SyncReplicasOptimizer(opt, **kwargs)
+        print(kwargs)
         print('#'*40)
+        opt = LowCommSync(opt, **kwargs)
 
         #  if FLAGS.interval_method or FLAGS.worker_times_cdf_method:
             #  opt = TimeoutReplicasOptimizer(
@@ -273,7 +269,8 @@ def train(target, all_data, all_labels, cluster_spec):
         # Compute gradients with respect to the loss.
         grads = opt.compute_gradients(total_loss)
         #compute weighted gradients here.
-        apply_gradients_op, opt_data = opt.apply_gradients(grads, global_step=global_step)
+        apply_gradients_op, opt_data = opt.apply_gradients(grads,
+                                                           global_step=global_step)
         with tf.control_dependencies([apply_gradients_op]):
             train_op = tf.identity(total_loss, name='train_op')
 
@@ -339,6 +336,7 @@ def train(target, all_data, all_labels, cluster_spec):
             if FLAGS.worker_times_cdf_method:
                 sess.run([opt._wait_op])
                 timeout_client.broadcast_worker_dequeued_token(cur_iteration)
+            start_time = time.time()
             epoch_counter, local_data_batch_idx, feed_dict = fill_feed_dict(
                 all_data, all_labels, image_placeholder, label_placeholder, FLAGS.batch_size, local_data_batch_idx, epoch_counter)
 
@@ -352,30 +350,30 @@ def train(target, all_data, all_labels, cluster_spec):
             #feed_dict[weight_vec_placeholder] = ls_solution
             tf.logging.info("RUNNING SESSION... %f" % time.time())
             tf.logging.info("Data batch index: %s, Current epoch idex: %s" % (str(epoch_counter), str(local_data_batch_idx)))
-            start_time = time.time()
-            loss_value, step = sess.run(
+            loss_value, step, opt_datum = sess.run(
                 #[train_op, global_step], feed_dict={feed_dict, x}, run_metadata=run_metadata, options=run_options)
-                [train_op, global_step], feed_dict=feed_dict, run_metadata=run_metadata, options=run_options)
+                [train_op, global_step, opt_data], feed_dict=feed_dict, run_metadata=run_metadata, options=run_options)
             finish_time = time.time()
-            #  tf.summary.scalar('loss', loss_value)
-            #  tf.summary.scalar('step', step)
-            #  tf.summary.scalar('batch_size', batch_size)
+            #  tf.summary.scalar('loss_train', loss_value)
+            #  tf.summary.scalar('step_train', step)
+            #  tf.summary.scalar('batch_size_train', batch_size)
 
             assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
             datum = {'loss': float(loss_value), 'step': int(step),
                      'cur_iteration': cur_iteration,
-                     'batch_size': FLAGS.batch_size,
-                     'epoch_train_time': finish_time - start_time,
-                     'svd_rank': FLAGS.svd_rank,
-                     'num_blocks': FLAGS.num_residual_blocks}
-            datum['num_layers'] = datum['num_blocks']*6 + 2
+                     'epoch_train_time': finish_time - start_time}
+            datum.update({key: getattr(FLAGS, key)
+                          for key in ['initial_learning_rate', 'svd_rank',
+                                      'num_residual_blocks', 'batch_size']})
+            datum['num_layers'] = datum['num_residual_blocks']*6 + 2
             datum['examples_per_sec'] = datum['batch_size'] / datum['epoch_train_time']
+            datum.update(opt_datum)
             summary_data += [datum]
             tf.logging.info("DONE RUNNING SESSION...")
             if FLAGS.timeline_logging:
                 tl = timeline.Timeline(run_metadata.step_stats)
                 ctf = tl.generate_chrome_trace_format()
-                with open('%s/worker=%d_timeline_iter=%d.json' % (FLAGS.train_dir, FLAGS.task_id, step), 'w'):
+                with open('%s/worker=%d_timeline_iter=%d.json' % (FLAGS.train_dir, FLAGS.task_id, step), 'w') as f:
                     f.write(ctf)
             if cur_iteration > FLAGS.max_steps:
                 break

@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow.python.framework import ops
 import time
+import sys
 
 
 def _4d_to_2d(x):
@@ -54,8 +55,23 @@ def encode(grads_and_vars, r=2):
     return grads_and_vars
 
 
+def _get_bytes(x):
+    if issubclass(x, dict):
+        return sum([_get_bytes(v) for k, v in x.items()])
+    if issubclass(x, tf.Tensor):
+        return _size(x)
+    return sys.getsizeof(x)
+
+
+def _list_bytes(tuple_list):
+    n_bytes = 0
+    for x, y in tuple_list:
+        n_bytes += _get_bytes(x)
+        n_bytes += _get_bytes(y)
+    return tf.int64(n_bytes)
+
+
 def decode(grads_and_vars):
-    data = {'n_bytes': 0}
     for i, (grad, var) in enumerate(grads_and_vars):
         msg = "decode: {name}['u'] is of size {size}"
         tf.logging.debug(msg.format(name=var.name, size=tf.shape(grad['s'])))
@@ -64,12 +80,11 @@ def decode(grads_and_vars):
             tmp2 = tf.matmul(tmp, tf.transpose(grad['v']))
             grad_hat = tf.reshape(tmp2, grad['shape'])
             grads_and_vars[i] = (grad_hat, var)
-            data['n_bytes'] += grad['n_bytes']
-    return grads_and_vars, data
+    return grads_and_vars, {'n_bytes': _list_bytes(grads_and_vars)}
 
 
 def _get_time():
-    return tf.py_func(lambda: tf.float32(time.time()), [], tf.float32)
+    return tf.py_func(time.time, [], tf.float64)
 
 
 class LowCommSync(tf.train.SyncReplicasOptimizer):
@@ -80,24 +95,34 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
     """
     def __init__(self, *args, **kwargs):
         self.svd_rank = kwargs.pop('svd_rank', 3)
+        self.compress = kwargs.pop('compress', False)
         print('LowCommSync: self.svd_rank =', self.svd_rank)
         return super(LowCommSync, self).__init__(*args, **kwargs)
 
     def compute_gradients(self, *args, **kwargs):
         grads_and_vars = super(LowCommSync, self).compute_gradients(*args, **kwargs)
+        if not self.compress:
+            return grads_and_vars
         coding = encode(grads_and_vars, r=self.svd_rank)
         return coding
 
     def apply_gradients(self, coding, *args, **kwargs):
         data = {}
-        with tf.device(kwargs['global_step'].device):
-            c0 = _get_time()
-            tmp = coding
-            c1 = _get_time() - start
-            grads_and_vars, opt_data = decode(coding)
-            data['decode_time'] = _get_time() - c1
-            data['comm_time'] = c1 - c0
+        global_step = kwargs['global_step']
+        with tf.device(global_step.device):
+            #  c0 = _get_time()
+
+            if self.compress:
+                tmp = coding
+                #  c1 = _get_time()
+                grads_and_vars, opt_data = decode(coding)
+                #  data['decode_time'] = _get_time() - c1
+                data.update(opt_data)
+            else:
+                grads_and_vars = coding
+                #  c1 = _get_time()
+
+            #  data['comm_time'] = c1 - c0
         res = super(LowCommSync, self).apply_gradients(grads_and_vars,
                                                        *args, **kwargs)
-        data.update(opt_data)
         return res, data
