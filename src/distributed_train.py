@@ -1,7 +1,4 @@
-# Coder: Wenxin Xu
-# Github: https://github.com/wenxinxu/resnet_in_tensorflow
-# ==============================================================================
-#Revised by: Hongyi Wang
+# Adapted from https://github.com/wenxinxu/resnet_in_tensorflow
 
 from __future__ import absolute_import
 from __future__ import division
@@ -61,9 +58,8 @@ tf.app.flags.DEFINE_string('train_dir', '/tmp/imagenet_train',
                            """and checkpoint.""")
 tf.app.flags.DEFINE_integer('rpc_port', 1235,
                            """Port for timeout communication""")
-
 tf.app.flags.DEFINE_integer('max_steps', 1000000, 'Number of batches to run.')
-tf.app.flags.DEFINE_integer('batch_size', 128, 'Batch size.')
+tf.app.flags.DEFINE_integer('batch_size', 32, 'Batch size.')
 tf.app.flags.DEFINE_integer('num_worker_kill', 3, 'Number of workers to kill.')
 tf.app.flags.DEFINE_string('subset', 'train', 'Either "train" or "validation".')
 tf.app.flags.DEFINE_boolean('log_device_placement', False,
@@ -246,7 +242,7 @@ def train(target, all_data, all_labels, cluster_spec):
         print('#'*40)
         print(kwargs)
         print('#'*40)
-        opt = LowCommSync(opt, **kwargs)
+        opt = LowCommSync(opt, global_step=global_step, **kwargs)
 
         #  if FLAGS.interval_method or FLAGS.worker_times_cdf_method:
             #  opt = TimeoutReplicasOptimizer(
@@ -267,10 +263,11 @@ def train(target, all_data, all_labels, cluster_spec):
                 #  total_num_replicas=num_workers)
 
         # Compute gradients with respect to the loss.
-        grads = opt.compute_gradients(total_loss)
+        grads, comp_data = opt.compute_gradients(total_loss)
         #compute weighted gradients here.
-        apply_gradients_op, opt_data = opt.apply_gradients(grads,
-                                                           global_step=global_step)
+        #  apply_gradients_op, opt_data = opt.apply_gradients(grads,
+                                                           #  global_step=global_step)
+        apply_gradients_op, apply_data = opt.apply_gradients(grads, global_step=global_step)
         with tf.control_dependencies([apply_gradients_op]):
             train_op = tf.identity(total_loss, name='train_op')
 
@@ -350,24 +347,32 @@ def train(target, all_data, all_labels, cluster_spec):
             #feed_dict[weight_vec_placeholder] = ls_solution
             tf.logging.info("RUNNING SESSION... %f" % time.time())
             tf.logging.info("Data batch index: %s, Current epoch idex: %s" % (str(epoch_counter), str(local_data_batch_idx)))
-            loss_value, step, opt_datum = sess.run(
+            print(comp_data, apply_data)
+            start_train_op = time.time()
+            loss_value, comp_datum, apply_datum, step = sess.run(
                 #[train_op, global_step], feed_dict={feed_dict, x}, run_metadata=run_metadata, options=run_options)
-                [train_op, global_step, opt_data], feed_dict=feed_dict, run_metadata=run_metadata, options=run_options)
+                [train_op, comp_data, apply_data, global_step], feed_dict=feed_dict, run_metadata=run_metadata, options=run_options)
             finish_time = time.time()
             #  tf.summary.scalar('loss_train', loss_value)
             #  tf.summary.scalar('step_train', step)
             #  tf.summary.scalar('batch_size_train', batch_size)
 
+            # data prep is getting the images, flipping the images, etc in
+            # `generate_augment_train_batch` and `fill_feed_dict`
             assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
             datum = {'loss': float(loss_value), 'step': int(step),
                      'cur_iteration': cur_iteration,
+                     'train_op_time': finish_time - start_train_op,
                      'epoch_train_time': finish_time - start_time}
+            datum.update(apply_datum)
+            datum.update(comp_data)
             datum.update({key: getattr(FLAGS, key)
                           for key in ['initial_learning_rate', 'svd_rank',
                                       'num_residual_blocks', 'batch_size']})
+            datum.update({'num_workers': num_workers})
             datum['num_layers'] = datum['num_residual_blocks']*6 + 2
             datum['examples_per_sec'] = datum['batch_size'] / datum['epoch_train_time']
-            datum.update(opt_datum)
+            #  datum.update(opt_datum)
             summary_data += [datum]
             tf.logging.info("DONE RUNNING SESSION...")
             if FLAGS.timeline_logging:
@@ -389,9 +394,9 @@ def train(target, all_data, all_labels, cluster_spec):
                 tf.logging.info(summary_data[-1])
                 df = pd.DataFrame(summary_data)
                 ids = [str(summary_data[0][key])
-                       for key in ['batch_size', 'svd_rank', 'num_layers']]
+                       for key in ['batch_size', 'svd_rank', 'num_layers', 'num_workers']]
                 filename = "-".join(ids)
-                df.to_csv('/home/ubuntu/cluster-shared/' + filename + '.csv')
+                df.to_csv('/home/ubuntu/cluster-shared/csv/' + filename + '.csv')
             if is_chief and next_summary_time < time.time() and FLAGS.should_summarize:
                 tf.logging.info('Running Summary operation on the chief.')
                 summary_str = sess.run(summary_op)
@@ -404,5 +409,5 @@ def train(target, all_data, all_labels, cluster_spec):
 
         if is_chief:
             saver.save(sess,
-                        os.path.join(FLAGS.train_dir, 'model.ckpt'),
-                        global_step=global_step)
+                       os.path.join(FLAGS.train_dir, 'model.ckpt'),
+                       global_step=global_step)

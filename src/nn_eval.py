@@ -140,7 +140,7 @@ def evaluate(dataset):
       if datum is not None:
           data += [datum]
           df = pd.DataFrame(data)
-          df.to_csv(out_dir + 'eval.csv')
+          df.to_csv(out_dir + '_eval.csv')
       if FLAGS.run_once:
         break
       time.sleep(FLAGS.eval_interval_secs)
