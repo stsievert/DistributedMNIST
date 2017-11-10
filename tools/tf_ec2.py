@@ -113,8 +113,18 @@ def tf_ec2_run(argv, configuration):
         dir = this_dir + '/../src'
         #  Parallel(n_jobs=8)(delayed(_scp)(dir, instance)
                            #  for instance in instances)
+        #  for instance in instances:
+            #  _scp(dir, instance)
+        threads = []
         for instance in instances:
-            _scp(dir, instance)
+            t = threading.Thread(target=_scp, args=(dir, instance))
+            t.daemon = True
+            t.start()
+            threads.append(t)
+
+        # Wait for threads to finish
+        for thread in threads:
+            thread.join()
         run_tf(argv, initialize=False)
 
     # Terminate all instances in the configuration
@@ -791,13 +801,14 @@ def tf_ec2_run(argv, configuration):
 
 
 cfg = Cfg({
-    "svd_rank": "0",
+    "svd_rank": 1,
     "name": "svd-rank-%(svd_rank)s",  # Unique name for this specific configuration
     "key_name": "scott-key-dim",  # Necessary to ssh into created instances
-    "depth": 4,  # total layers = 6*depth + 2
-    "batch_size": "32",
-    "max_steps": "4000",
-    "initial_learning_rate": "0.001",
+    "depth": 25,  # total layers = 6*depth + 2
+    "batch_size": 32,
+    "max_steps": 4000,
+    "initial_learning_rate": 0.005,
+    "num_replicas_to_aggregate": "%(n_workers)s",
 
     # SSH configuration
     # DONE: change both these lines
@@ -806,23 +817,22 @@ cfg = Cfg({
 
     # Cluster topology
     "n_masters": 1,  # == 1
-    "n_workers": 1,  # the master counts as a worker too
+    "n_workers": 2,  # the master counts as a worker too
     "n_ps": 1,
     # Continually validates the model on the validation data
     "n_evaluators": 1,
-    "num_replicas_to_aggregate": "%(n_workers)d + %(n_masters)d",
 
     # Model configuration
     # TODO: make these command line args
-    "learning_rate_decay_factor": ".95",
-    "num_epochs_per_decay": "1.0",
+    "learning_rate_decay_factor": .95,
+    "num_epochs_per_decay": 1.0,
 
     "method": "reserved",
 
     # Region speficiation
     # DONE: change this?
     "region": "us-west-2",
-    "availability_zone": "us-west-2b",
+    "availability_zone": "us-west-2a",
 
     # Machine type - instance type configuration.
     #  "master_type": "p2.xlarge",
@@ -905,11 +915,11 @@ cfg = Cfg({
     # %(...)s - Inserts self referential string value.
     "train_commands":
     [
-        "cd /home/ubuntu/DistributedMNIST;",
-        "sudo pip install -r src/requirements.txt",
         "sudo rm -rf %(base_out_dir)s ",
         "mkdir %(base_out_dir)s",
-        "python src/cifar10_input.py",
+        "cd /home/ubuntu/DistributedMNIST;",
+        "sudo pip install -r src/requirements.txt",
+        "python src/cifar10_input.py > /home/ubuntu/cifar10.out",
         "python src/resnet_distributed_train.py "
         "--batch_size=%(batch_size)s "
         "--initial_learning_rate=%(initial_learning_rate)s "
@@ -921,7 +931,7 @@ cfg = Cfg({
         "--worker_hosts='WORKER_HOSTS' "
         "--ps_hosts='PS_HOSTS' "
         "--task_id=TASK_ID "
-        "--timeline_logging=true "  # debug
+        "--timeline_logging=true "  # debug (writes a ton to disk!)
         "--interval_method=false "
         "--worker_times_cdf_method=false "
         "--interval_ms=1200 "
@@ -935,7 +945,7 @@ cfg = Cfg({
     [
         # Sleep a bit
         "sudo pip install -r src/requirements.txt",
-        "sleep 30", # TODO: change to sleep 30 when not in debug mode!
+        "sleep 1",  # TODO: change to sleep 30 when not in debug mode!
         "cd /home/ubuntu/DistributedMNIST",
 
         # Evaluation command
