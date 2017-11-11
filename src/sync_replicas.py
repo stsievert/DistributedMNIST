@@ -18,15 +18,9 @@ from tensorflow.python.training import optimizer
 from tensorflow.python.training import queue_runner
 
 
-def _4d_to_2d(x):
-    shape = x.get_shape().as_list()
-    ndim = len(shape)
-
-    if ndim == 4:
-        shape = [shape[0]*shape[1], shape[2]*shape[3]]
-    else:
-        tf.logging.warning("#"*30 + "\n" + "CAREFUL! tensor not 4D")
-
+def _4d_to_2d(x, shape):
+    shape = shape.as_list()
+    shape = [shape[0]*shape[1], shape[2]*shape[3]]
     return tf.reshape(x, shape)
 
 
@@ -60,29 +54,34 @@ def _list_bytes(tuple_list):
     return n_bytes
 
 
-def _svd_encode(grad, r=3):
-    with tf.device(grad.device):
+def _svd_encode(grad, r=3, ndims=None, shape=None):
+    #  with tf.device(grad.device):
+    if shape is None:
         shape = grad.get_shape()
+    if ndims is None:
         ndims = len(shape)
-        #  tf.logging.debug("{name} has len(shape)={shape}".format(name=var.name, shape=ndims))
-        if ndims == 4:
-            grad = _4d_to_2d(grad)
-            ndims = len(grad.get_shape())
-        if ndims == 2:
-            s, u, v = tf.svd(grad, full_matrices=False)
-            #  i = tf.py_func(_sample_svd, [s], tf.int32)
-            u = u[:, :r]
-            s = s[:r]
-            v = v[:, :r]
+    #  tf.logging.debug("{name} has len(shape)={shape}".format(name=var.name, shape=ndims))
+    if ndims == 4:
+        grad = _4d_to_2d(grad, shape)
+        ndims = grad.get_shape().ndims
+    if ndims == 2:
+        s, u, v = tf.svd(grad, full_matrices=False)
+        #  i = tf.py_func(_sample_svd, [s], tf.int32)
+        u = u[:, :r]
+        s = s[:r]
+        v = v[:, :r]
 
-            coding = {'u': u, 's': s, 'v': v, 'shape': shape}
-            return coding
+        coding = {'u': u, 's': s, 'v': v, 'shape': shape}
+        return coding
     return grad
 
 
-def encode(grads_and_vars, r=2):
-    for i, (grad, var) in enumerate(grads_and_vars):
-        grads_and_vars[i] = (_svd_encode(grad, r=r), var)
+def encode(grads_and_vars, r=2, shapes=None):
+    for i, ((grad, var), shape) in enumerate(zip(grads_and_vars, shapes)):
+        with tf.device(var.device):
+            ndims = len(shape)
+            code = _svd_encode(grad, r=r, ndims=ndims, shape=shape)
+            grads_and_vars[i] = (code, var)
 
     n_bytes = _list_bytes(grads_and_vars)
     for i, (g, v) in enumerate(grads_and_vars):
@@ -133,15 +132,17 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
         print('LowCommSync: self.svd_rank =', self.svd_rank)
         return super(LowCommSync, self).__init__(*args, **kwargs)
 
-    def compute_gradients(self, *args, **kwargs):
-        grads_and_vars = super(LowCommSync, self).compute_gradients(*args, **kwargs)
-        data = {}
+    def _encode(self, grads_and_vars, shapes):
         if not self.compress:
-            return grads_and_vars, data
-        start = _get_time(device=self.root)
-        coding = encode(grads_and_vars, r=self.svd_rank)
-        return coding, data  # {'encode_time': _get_time(device=self.root) - start}
+            return grads_and_vars
+        coding = encode(grads_and_vars, r=self.svd_rank, shapes=shapes)
+        return coding
 
+    def _decode(self, coding):
+        if self.compress:
+            grads_and_vars, decode_data = decode(coding)
+            return grads_and_vars, decode_data
+        return coding, {}
 
     def apply_gradients(self, grads_and_vars, global_step=None, name=None):
         """Apply gradients to variables.
@@ -215,9 +216,12 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
 
             aggregated_grads_and_vars = zip(aggregated_grad, var_list)
 
+            shapes = [g.get_shape() for g, _ in grads_and_vars]
+            coding = self._encode(aggregated_grads_and_vars, shapes=shapes)
+
             # sync_op will be assigned to the same device as the global step.
             with ops.device(global_step.device), ops.name_scope(""):
-                #  aggregated_grads_and_vars = self._decode(aggregated_grads_and_vars)
+                aggregated_grads_and_vars, decode_data = self._decode(coding)
                 update_op = self._opt.apply_gradients(aggregated_grads_and_vars,
                                                       global_step)
 
@@ -265,4 +269,4 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
                             global_step, name="SetGlobalStep"))
             self.chief_init_op = control_flow_ops.group(*(chief_init_ops))
             self._gradients_applied = True
-        return train_op
+        return train_op, decode_data

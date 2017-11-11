@@ -263,7 +263,7 @@ def train(target, all_data, all_labels, cluster_spec):
                 #  total_num_replicas=num_workers)
 
         # Compute gradients with respect to the loss.
-        grads, comp_data = opt.compute_gradients(total_loss)
+        grads = opt.compute_gradients(total_loss)
         #compute weighted gradients here.
         #  apply_gradients_op, opt_data = opt.apply_gradients(grads,
                                                            #  global_step=global_step)
@@ -347,12 +347,13 @@ def train(target, all_data, all_labels, cluster_spec):
             #feed_dict[weight_vec_placeholder] = ls_solution
             tf.logging.info("RUNNING SESSION... %f" % time.time())
             tf.logging.info("Data batch index: %s, Current epoch idex: %s" % (str(epoch_counter), str(local_data_batch_idx)))
-            print(comp_data, apply_data)
+            #  print(comp_data, apply_data)
             start_train_op = time.time()
-            loss_value, comp_datum, apply_datum, step = sess.run(
+            loss_value, apply_datum, step = sess.run(
                 #[train_op, global_step], feed_dict={feed_dict, x}, run_metadata=run_metadata, options=run_options)
-                [train_op, comp_data, apply_data, global_step], feed_dict=feed_dict, run_metadata=run_metadata, options=run_options)
+                [train_op, apply_data, global_step], feed_dict=feed_dict, run_metadata=run_metadata, options=run_options)
             finish_time = time.time()
+            tf.logging.info("Done running session")
             #  tf.summary.scalar('loss_train', loss_value)
             #  tf.summary.scalar('step_train', step)
             #  tf.summary.scalar('batch_size_train', batch_size)
@@ -365,7 +366,6 @@ def train(target, all_data, all_labels, cluster_spec):
                      'train_op_time': finish_time - start_train_op,
                      'epoch_train_time': finish_time - start_time}
             datum.update(apply_datum)
-            datum.update(comp_data)
             datum.update({key: getattr(FLAGS, key)
                           for key in ['initial_learning_rate', 'svd_rank',
                                       'num_residual_blocks', 'batch_size']})
@@ -390,8 +390,11 @@ def train(target, all_data, all_labels, cluster_spec):
             tf.logging.info(format_str %
                         (FLAGS.task_id, datetime.now(), step, loss_value,
                             examples_per_sec, duration))
+            print('is chief =', is_chief)
+            print('step =', step)
             if is_chief and step % 1 == 0:
                 tf.logging.info(summary_data[-1])
+                print(summary_data[-1])
                 df = pd.DataFrame(summary_data)
                 ids = [str(summary_data[0][key])
                        for key in ['batch_size', 'svd_rank', 'num_layers', 'num_workers']]
