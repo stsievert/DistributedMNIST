@@ -30,6 +30,7 @@ from tensorflow.python.ops import state_ops
 from tensorflow.python.ops import logging_ops
 from tensorflow.python.client import timeline
 from tensorflow.python.ops import data_flow_ops
+from tensorflow.python import debug as tf_debug
 from timeout_manager import launch_manager
 
 np.set_printoptions(threshold=np.nan)
@@ -301,6 +302,8 @@ def train(target, all_data, all_labels, cluster_spec):
             allow_soft_placement=True,
             log_device_placement=FLAGS.log_device_placement)
         sess = sv.prepare_or_wait_for_session(target, config=sess_config)
+        sess = tf_debug.LocalCLIDebugWrapperSession(sess)
+
         queue_runners = tf.get_collection(tf.GraphKeys.QUEUE_RUNNERS)
         sv.start_queue_runners(sess, queue_runners)
         tf.logging.info('Started %d queues for processing input data.',

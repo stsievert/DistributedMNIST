@@ -804,7 +804,7 @@ cfg = Cfg({
     "svd_rank": 1,
     "name": "svd-rank-%(svd_rank)s",  # Unique name for this specific configuration
     "key_name": "scott-key-dim",  # Necessary to ssh into created instances
-    "depth": 25,  # total layers = 6*depth + 2
+    "depth": 2,  # total layers = 6*depth + 2
     "batch_size": 32,
     "max_steps": 4000,
     "initial_learning_rate": 0.005,

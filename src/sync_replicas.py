@@ -123,24 +123,31 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
     [1]:https://github.com/tensorflow/tensorflow/blob/r0.12/tensorflow/python/training/sync_replicas_optimizer.py#L39
     """
     def __init__(self, *args, **kwargs):
-        global_step = kwargs.pop('global_step', None)
+        self.global_step = kwargs.pop('global_step', None)
         self.svd_rank = kwargs.pop('svd_rank', 3)
         self.compress = kwargs.pop('compress', False)
-        assert global_step is not None
+        #  assert global_step is not None
         #  self.root = global_step.device
-        self.root = None
+        #  self.root = None
+
         print('LowCommSync: self.svd_rank =', self.svd_rank)
         return super(LowCommSync, self).__init__(*args, **kwargs)
 
     def _encode(self, grads_and_vars, shapes):
+        return grads_and_vars
         if not self.compress:
             return grads_and_vars
+        tf.logging.info("Entering encode")
         coding = encode(grads_and_vars, r=self.svd_rank, shapes=shapes)
+        tf.logging.info("Leaving encode")
         return coding
 
     def _decode(self, coding):
+        return coding, {}
         if self.compress:
+            tf.logging.info("Entering decode")
             grads_and_vars, decode_data = decode(coding)
+            tf.logging.info("Leaving decode")
             return grads_and_vars, decode_data
         return coding, {}
 
@@ -217,6 +224,7 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
             aggregated_grads_and_vars = zip(aggregated_grad, var_list)
 
             shapes = [g.get_shape() for g, _ in grads_and_vars]
+            print([(g.device, v.device) for g, v in grads_and_vars])
             coding = self._encode(aggregated_grads_and_vars, shapes=shapes)
 
             # sync_op will be assigned to the same device as the global step.
